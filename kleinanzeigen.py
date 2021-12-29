@@ -72,6 +72,12 @@ def login(config):
     text_area.send_keys(input_pw)
     fake_wait(200)
 
+    has_captcha = login_has_captcha(driver)
+    if has_captcha:
+        log.info("\t*** Manual captcha input needed! ***")
+        log.info("\tFill out captcha but DON'T submit. After that press Enter here to continue ...")
+        wait_key()
+
     submit_button = driver.find_element_by_id('login-submit')
     submit_button.click()
 
@@ -153,6 +159,21 @@ def wait_key():
     return result
 
 
+def login_has_captcha(driver):
+    has_captcha = False
+
+    try:
+        captcha_field = driver.find_element_by_xpath('//*[@id="login-recaptcha"]')
+        if captcha_field:
+            has_captcha = True
+    except NoSuchElementException:
+        pass
+
+    log.info(f"Captcha: {has_captcha}")
+
+    return has_captcha
+
+
 def post_ad_has_captcha(driver):
     has_captcha = False
 
@@ -195,21 +216,30 @@ def post_ad(driver, ad, interactive):
         ad["price_type"] = 'NEGOTIABLE'
 
     # Navigate to page
-    driver.get('https://www.ebay-kleinanzeigen.de/p-anzeige-aufgeben.html')
+    driver.get('https://www.ebay-kleinanzeigen.de/p-anzeige-aufgeben-schritt2.html')
     fake_wait(randint(2000, 3500))
 
     category_selected = False
     try:
-      driver.find_element_by_id('pstad-lnk-chngeCtgry')
-      log.info("Using new layout")
-    except:
-      log.info("Using old layout")
-      # legacy handling for old page layout where you have to first select the category (currently old and new layout are served randomly)
-      driver.get(ad["caturl"].replace('p-kategorie-aendern', 'p-anzeige-aufgeben'))
-      fake_wait(300)
-      driver.find_element_by_css_selector("#postad-step1-sbmt button").click()
-      fake_wait(300)
-      category_selected = True
+        driver.find_element_by_id('pstad-lnk-chngeCtgry')
+        log.info("Using new layout")
+    except NoSuchElementException:
+        driver.get('https://www.ebay-kleinanzeigen.de/p-anzeige-aufgeben.html')
+        fake_wait(randint(2000, 3500))
+
+        try:
+            driver.find_element_by_id('pstad-lnk-chngeCtgry')
+            log.info("Using new layout")
+
+        except NoSuchElementException:
+            log.info("Using old layout")
+            sys.exit(1)
+            # legacy handling for old page layout where you have to first select the category (currently old and new layout are served randomly)
+            driver.get(ad["caturl"].replace('p-kategorie-aendern', 'p-anzeige-aufgeben'))
+            fake_wait(300)
+            driver.find_element_by_css_selector("#postad-step1-sbmt button").click()
+            fake_wait(300)
+            category_selected = True
 
     # Check if posting an ad is allowed / possible
     fRc = post_ad_is_allowed(driver)
@@ -282,11 +312,9 @@ def post_ad(driver, ad, interactive):
 
     if (ad['shipping_type']) != 'NONE':
         try:
-            select_element = driver.find_element_by_css_selector('select[id$=".versand_s"]')
-            shipment_select = Select(select_element)
-            log.debug("\t shipping select found with id: %s" % select_element.get_attribute('id'))
             if (ad['shipping_type']) == 'PICKUP':
-                shipment_select.select_by_visible_text("Nur Abholung")
+                ship_button = driver.find_element_by_xpath("/html/body/div[1]/form/fieldset[1]/fieldset/div[3]/div/div/div/div[1]/div[2]/div/label[2]/input")
+                ship_button.click()
             if (ad['shipping_type']) == 'SHIPPING':
                 shipment_select.select_by_visible_text("Versand möglich")
             fake_wait()
@@ -296,8 +324,10 @@ def post_ad(driver, ad, interactive):
     text_area = driver.find_element_by_id('pstad-price')
     if ad["price_type"] != 'GIVE_AWAY':
         text_area.send_keys(ad["price"])
-    price = driver.find_element_by_xpath("//input[@name='priceType' and @value='%s']" % ad["price_type"])
-    price.click()
+    price = driver.find_element_by_id('priceType')
+    priceTypeSelection = Select(price)
+    priceTypeSelection.select_by_value(ad["price_type"])
+
     fake_wait()
 
     text_area = driver.find_element_by_id('pstad-zip')
